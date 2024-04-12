@@ -34,8 +34,8 @@ router.get("/profile", requiresAuth(), async (req, res) => {
 
   const passkeys = credentials.map((c) => ({
     id: c.id,
-    icon: metadata[c.aaguid].icon,
-    description: metadata[c.aaguid].description,
+    icon: metadata[c.aaguid]?.icon,
+    description: metadata[c.aaguid]?.description,
     created: formatted(c.created),
     is_synced: c.is_backed_up,
     can_delete: credentials.length > 1 || hasPassword,
