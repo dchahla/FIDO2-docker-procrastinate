@@ -1,58 +1,58 @@
-const router = require("express").Router();
-const { json } = require("body-parser");
+const router = require('express').Router()
+const { json } = require('body-parser')
 const {
   generateRegistrationOptions,
-  verifyRegistrationResponse,
-} = require("@simplewebauthn/server");
-const { isoBase64URL } = require("@simplewebauthn/server/helpers");
+  verifyRegistrationResponse
+} = require('@simplewebauthn/server')
+const { isoBase64URL } = require('@simplewebauthn/server/helpers')
 
-const { BadRequestError } = require("../../utils/error");
-const { usersTable, credentialsTable } = require("../../utils/data");
+const { BadRequestError } = require('../../utils/error')
+const { usersTable, credentialsTable } = require('../../utils/data')
 const {
   beginSignup,
   getRegistration,
-  completeSignIn,
-} = require("../../utils/auth");
-const { now } = require("../../utils/time");
-const { createUser } = require("../../utils/entity");
+  completeSignIn
+} = require('../../utils/auth')
+const { now } = require('../../utils/time')
+const { createUser } = require('../../utils/entity')
 
-const { RP_ID: rpID, RP_NAME: rpName, BASE_URL: baseUrl } = process.env;
-
+const { RP_ID: rpID, RP_NAME: rpName, BASE_URL: baseUrl } = process.env
+// console.log(rpID, baseUrl)
 // endpoints
 
-router.post("/options", json(), async (req, res) => {
-  const { username, displayName, attestation } = req.body;
+router.post('/options', json(), async (req, res) => {
+  const { username, displayName, attestation } = req.body
 
-  let registeringUser;
-  let excludeCredentials;
+  let registeringUser
+  let excludeCredentials
 
   if (req.user) {
     // registering user is an existing user
-    const { row } = await usersTable.findRow((r) => r.id === req.user.id);
-    registeringUser = row;
+    const { row } = await usersTable.findRow(r => r.id === req.user.id)
+    registeringUser = row
     if (!registeringUser) {
-      throw BadRequestError(`User with ID ${req.user.id} no longer exists`);
+      throw BadRequestError(`User with ID ${req.user.id} no longer exists`)
     }
 
     // going to exclude existing credentials
     const { rows } = await credentialsTable.findRows(
-      (r) => r.user_id === req.user.id
-    );
-    excludeCredentials = rows;
+      r => r.user_id === req.user.id
+    )
+    excludeCredentials = rows
   } else {
     // ensure new user is unique
     const { row: existingUser } = await usersTable.findRow(
-      (r) => r.username === username
-    );
+      r => r.username === username
+    )
     if (existingUser) {
-      throw BadRequestError("User already exists");
+      throw BadRequestError('User already exists')
     }
 
     // register user will be a new user
-    registeringUser = createUser(username, displayName);
+    registeringUser = createUser(username, displayName)
 
     // no existing credentials to exclude
-    excludeCredentials = [];
+    excludeCredentials = []
   }
 
   // generate options
@@ -63,66 +63,66 @@ router.post("/options", json(), async (req, res) => {
     userName: registeringUser.username,
     userDisplayName: registeringUser.display_name,
     attestationType: attestation,
-    excludeCredentials: excludeCredentials.map((c) => ({
+    excludeCredentials: excludeCredentials.map(c => ({
       id: isoBase64URL.toBuffer(c.id),
-      type: "public-key",
-      transports: c.transports.split(","),
-    })),
-  });
+      type: 'public-key',
+      transports: c.transports.split(',')
+    }))
+  })
 
   // build response
   const optionsResponse = {
     ...attestationOptions,
-    status: "ok",
-    errorMessage: "",
-  };
+    status: 'ok',
+    errorMessage: ''
+  }
   console.log(
-    "DEBUG [/fido2/attestation/options] Registration challenge response:",
+    'DEBUG [/fido2/attestation/options] Registration challenge response:',
     optionsResponse
-  );
+  )
 
   // store registration state in session
-  beginSignup(req, registeringUser, optionsResponse.challenge);
+  beginSignup(req, registeringUser, optionsResponse.challenge)
 
-  res.json(optionsResponse);
-});
+  res.json(optionsResponse)
+})
 
-router.post("/result", json(), async (req, res) => {
+router.post('/result', json(), async (req, res) => {
   // validate request
-  const { body } = req;
-  const { id, response } = req.body;
+  const { body } = req
+  const { id, response } = req.body
   if (!id) {
-    throw BadRequestError("Missing: credential ID");
+    throw BadRequestError('Missing: credential ID')
   }
   if (!response) {
-    throw BadRequestError("Missing: authentication response");
+    throw BadRequestError('Missing: authentication response')
   }
 
   // retrieve registration state from session
-  const registration = getRegistration(req);
+  const registration = getRegistration(req)
   console.log(
-    "DEBUG [/fido2/attestation/result] Registration state retrieved from session:",
+    'DEBUG [/fido2/attestation/result] Registration state retrieved from session:',
     registration
-  );
+  )
 
   //verify registration
-  let verification;
+  let verification
   try {
     verification = await verifyRegistrationResponse({
       response: body,
       expectedChallenge: registration.challenge,
       expectedOrigin: baseUrl,
-      expectedRPID: rpID,
-    });
+      expectedRPID: rpID
+    })
   } catch (err) {
     console.log(
       `WARN [/fido2/attestation/result] Registration error with username ${registration.username} and credential ${id}:`,
       err
-    );
+    )
 
-    throw BadRequestError(`Registration failed: ${err.message}`);
+    throw BadRequestError(`Registration failed: ${err.message}`)
   }
-  console.log("DEBUG [/fido2/attestation/result] verification:", verification);
+  console.log('DEBUG [/fido2/attestation/result] verification:', verification)
 
   // build validated credential
   const {
@@ -131,8 +131,8 @@ router.post("/result", json(), async (req, res) => {
     credentialID,
     counter,
     credentialDeviceType,
-    credentialBackedUp,
-  } = verification.registrationInfo;
+    credentialBackedUp
+  } = verification.registrationInfo
   const validatedCredential = {
     id: isoBase64URL.fromBuffer(credentialID),
     created: now().toISO(),
@@ -141,48 +141,48 @@ router.post("/result", json(), async (req, res) => {
     aaguid,
     device_type: credentialDeviceType,
     is_backed_up: credentialBackedUp,
-    transports: response.transports.join(","),
-  };
+    transports: response.transports.join(',')
+  }
   console.log(
-    "DEBUG [/fido2/attestation/result] Validated credential:",
+    'DEBUG [/fido2/attestation/result] Validated credential:',
     validatedCredential
-  );
+  )
 
-  let { user } = req;
-  let return_to = "/";
+  let { user } = req
+  let return_to = '/'
 
   const insertCredential = async () => {
-    validatedCredential.user_id = user.id;
+    validatedCredential.user_id = user.id
     const { insertedRow: credential } = await credentialsTable.insertRow(
       validatedCredential
-    );
-    return credential;
-  };
+    )
+    return credential
+  }
 
   if (user) {
     // create additional credential
-    await insertCredential();
+    await insertCredential()
   } else {
     // create new user with initial credential
-    const { registeringUser } = registration;
-    const { insertedRow } = await usersTable.insertRow(registeringUser);
-    user = insertedRow;
+    const { registeringUser } = registration
+    const { insertedRow } = await usersTable.insertRow(registeringUser)
+    user = insertedRow
 
     // create first credential
-    const credential = await insertCredential();
+    const credential = await insertCredential()
 
     // perform sign-in with newly registered user
-    return_to = completeSignIn(req, user, credential.id);
+    return_to = completeSignIn(req, user, credential.id)
   }
 
   // build response
   const resultResponse = {
-    status: "ok",
-    errorMessage: "",
-    return_to,
-  };
+    status: 'ok',
+    errorMessage: '',
+    return_to
+  }
 
-  res.json(resultResponse);
-});
+  res.json(resultResponse)
+})
 
-module.exports = router;
+module.exports = router
