@@ -7,7 +7,7 @@ const {
 const { isoBase64URL } = require('@simplewebauthn/server/helpers')
 
 const { BadRequestError } = require('../../utils/error')
-const { usersTable, credentialsTable } = require('../../utils/data')
+const { usersTable, credentialsTable } = require('../../utils/fadata-admin')
 const {
   beginSignup,
   getRegistration,
@@ -17,7 +17,7 @@ const { now } = require('../../utils/time')
 const { createUser } = require('../../utils/entity')
 
 const { RP_ID: rpID, RP_NAME: rpName, BASE_URL: baseUrl } = process.env
-// console.log(rpID, baseUrl)
+
 // endpoints
 
 router.post('/options', json(), async (req, res) => {
@@ -28,23 +28,23 @@ router.post('/options', json(), async (req, res) => {
 
   if (req.user) {
     // registering user is an existing user
-    const { row } = await usersTable.findRow(r => r.id === req.user.id)
-    registeringUser = row
+    const userSnapshot = await usersTable.doc(req.user.id).get()
+    registeringUser = userSnapshot.data()
     if (!registeringUser) {
       throw BadRequestError(`User with ID ${req.user.id} no longer exists`)
     }
 
     // going to exclude existing credentials
-    const { rows } = await credentialsTable.findRows(
-      r => r.user_id === req.user.id
-    )
-    excludeCredentials = rows
+    const credentialsSnapshot = await credentialsTable
+      .where('user_id', '==', req.user.id)
+      .get()
+    excludeCredentials = credentialsSnapshot.docs.map(doc => doc.data())
   } else {
     // ensure new user is unique
-    const { row: existingUser } = await usersTable.findRow(
-      r => r.username === username
-    )
-    if (existingUser) {
+    const userSnapshot = await usersTable
+      .where('username', '==', username)
+      .get()
+    if (!userSnapshot.empty) {
       throw BadRequestError('User already exists')
     }
 
@@ -90,7 +90,7 @@ router.post('/options', json(), async (req, res) => {
 router.post('/result', json(), async (req, res) => {
   // validate request
   const { body } = req
-  const { id, response } = req.body
+  const { id, response } = body
   if (!id) {
     throw BadRequestError('Missing: credential ID')
   }
@@ -105,7 +105,7 @@ router.post('/result', json(), async (req, res) => {
     registration
   )
 
-  //verify registration
+  // verify registration
   let verification
   try {
     verification = await verifyRegistrationResponse({
@@ -153,10 +153,7 @@ router.post('/result', json(), async (req, res) => {
 
   const insertCredential = async () => {
     validatedCredential.user_id = user.id
-    const { insertedRow: credential } = await credentialsTable.insertRow(
-      validatedCredential
-    )
-    return credential
+    await credentialsTable.add(validatedCredential)
   }
 
   if (user) {
@@ -165,14 +162,15 @@ router.post('/result', json(), async (req, res) => {
   } else {
     // create new user with initial credential
     const { registeringUser } = registration
-    const { insertedRow } = await usersTable.insertRow(registeringUser)
-    user = insertedRow
+    const userRef = await usersTable.add(registeringUser)
+    const userDoc = await userRef.get()
+    user = userDoc.data()
 
     // create first credential
-    const credential = await insertCredential()
+    await insertCredential()
 
     // perform sign-in with newly registered user
-    return_to = completeSignIn(req, user, credential.id)
+    return_to = completeSignIn(req, user, validatedCredential.id)
   }
 
   // build response

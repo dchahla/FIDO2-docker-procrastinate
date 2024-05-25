@@ -7,7 +7,7 @@ const {
 const { isoBase64URL } = require('@simplewebauthn/server/helpers')
 
 const { BadRequestError } = require('../../utils/error')
-const { usersTable, credentialsTable } = require('../../utils/data')
+const { usersTable, credentialsTable } = require('../../utils/fadata-admin')
 const {
   continueSignInWithPasskey,
   getAuthentication,
@@ -34,18 +34,22 @@ router.post('/options', json(), async (req, res) => {
   let existingUser
   let existingCredentials = []
   if (username.length > 0) {
-    const { row } = await usersTable.findRow(r => r.username === username)
-    existingUser = row
+    const userSnapshot = await usersTable
+      .where('username', '==', username)
+      .get()
+    if (!userSnapshot.empty) {
+      existingUser = userSnapshot.docs[0].data()
+    }
 
     if (!existingUser) {
-      logger.warn(`No such user with name '${username}'`)
+      console.warn(`No such user with name '${username}'`)
       throw FailedAuthenticationError()
     }
 
-    const { rows } = await credentialsTable.findRows(
-      r => r.user_id === existingUser.id
-    )
-    existingCredentials = rows
+    const credentialsSnapshot = await credentialsTable
+      .where('user_id', '==', existingUser.id)
+      .get()
+    existingCredentials = credentialsSnapshot.docs.map(doc => doc.data())
   }
 
   // generate assertion options (challenge)
@@ -100,16 +104,15 @@ router.post('/result', json(), async (req, res) => {
   )
 
   // find user credential
-  const { row: activeCredential } = await credentialsTable.findRow(
-    r => r.id === id
-  )
-  if (!activeCredential) {
+  const credentialSnapshot = await credentialsTable.where('id', '==', id).get()
+  if (credentialSnapshot.empty) {
     console.log(
       `WARN [/fido2/assertion/result] No credential found with ID ${id}`
     )
 
     throw FailedAuthenticationError()
   }
+  const activeCredential = credentialSnapshot.docs[0].data()
   if (
     authentication.userId &&
     activeCredential.user_id !== authentication.userId
@@ -122,15 +125,14 @@ router.post('/result', json(), async (req, res) => {
   }
 
   // fetch associated user
-  const { row: existingUser } = await usersTable.findRow(
-    r => r.id === activeCredential.user_id
-  )
-  if (!existingUser) {
+  const userSnapshot = await usersTable.doc(activeCredential.user_id).get()
+  if (!userSnapshot.exists) {
     // NOTE: this shouldn't happen unless there's a data integrity issue
     throw new Error(
       `Cannot find user (id = ${activeCredential.user_id}) associated with active credential (id =${activeCredential.id})`
     )
   }
+  const existingUser = userSnapshot.data()
 
   // verify assertion
   let verification

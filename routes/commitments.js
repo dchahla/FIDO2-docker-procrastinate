@@ -1,71 +1,86 @@
-const router = require("express").Router();
-const { urlencoded } = require("body-parser");
-
-const { commitmentsTable } = require("../utils/data");
-const { generateCsrfToken, validateCsrfToken } = require("../utils/csrf");
-const { newEntityId } = require("../utils/identifier");
-const { ago, formatted } = require("../utils/time");
-const { BadRequestError } = require("../utils/error");
-const { requiresAuth } = require("../utils/auth");
+const router = require('express').Router()
+const { urlencoded } = require('body-parser')
+const { commitmentsTable } = require('../utils/fadata-admin')
+const { generateCsrfToken, validateCsrfToken } = require('../utils/csrf')
+const { newEntityId } = require('../utils/identifier')
+const { ago, formatted } = require('../utils/time')
+const { BadRequestError } = require('../utils/error')
+const { requiresAuth } = require('../utils/auth')
 
 // endpoints
 
-router.get("/commitments", requiresAuth(), async (req, res) => {
-  const { rows } = await commitmentsTable.findRows(
-    (r) => r.user_id === req.user.id,
-    [{ asc: "started" }]
-  );
-  const commitments = rows.map((r) => ({
-    ...r,
-    started: formatted(r.started),
-  }));
+router.get('/commitments', requiresAuth(), async (req, res) => {
+  const snapshot = await commitmentsTable
+    .where('user_id', '==', req.user.id)
+    .orderBy('started', 'asc')
+    .get()
 
-  const csrf_token = generateCsrfToken(req, res);
-  res.render("commitments", { csrf_token, commitments });
-});
+  if (snapshot.empty) {
+    return res.render('commitments', {
+      csrf_token: generateCsrfToken(req, res),
+      commitments: []
+    })
+  }
+
+  const commitments = snapshot.docs.map(doc => ({
+    ...doc.data(),
+    started: formatted(doc.data().started)
+  }))
+
+  const csrf_token = generateCsrfToken(req, res)
+  res.render('commitments', { csrf_token, commitments })
+})
 
 router.post(
-  "/commitments",
+  '/commitments',
   requiresAuth(),
   urlencoded({ extended: false }),
   validateCsrfToken(),
   async (req, res) => {
-    const { action } = req.body;
+    const { action } = req.body
 
     switch (action) {
-      case "add_commitment":
-        const { description, started_ago } = req.body;
+      case 'add_commitment':
+        const { description, started_ago } = req.body
         if (!description) {
-          throw BadRequestError("Missing: description");
+          throw BadRequestError('Missing: description')
         }
         if (!started_ago) {
-          throw BadRequestError("Missing: started_ago");
+          throw BadRequestError('Missing: started_ago')
         }
 
         const newCommitment = {
           id: newEntityId(),
           description,
           started: ago(started_ago).toISO(),
-          user_id: req.user.id,
-        };
+          user_id: req.user.id
+        }
 
-        await commitmentsTable.insertRow(newCommitment);
-        break;
+        await commitmentsTable.add(newCommitment)
+        break
 
-      case "delete_commitment":
-        const { commitment_id } = req.body;
+      case 'delete_commitment':
+        const { commitment_id } = req.body
+        const deleteQuerySnapshot = await commitmentsTable
+          .where('id', '==', commitment_id)
+          .where('user_id', '==', req.user.id)
+          .get()
 
-        await commitmentsTable.deleteRow(
-          (r) => r.id === commitment_id && r.user_id === req.user.id
-        );
-        break;
+        if (deleteQuerySnapshot.empty) {
+          throw BadRequestError(
+            'Commitment not found or not authorized to delete'
+          )
+        }
+
+        await deleteQuerySnapshot.docs[0].ref.delete()
+        break
 
       default:
-        throw BadRequestError(`Unsupported action: ${action}`);
+        throw BadRequestError(`Unsupported action: ${action}`)
     }
 
-    res.redirect("/commitments");
+    res.redirect('/commitments')
   }
-);
+)
 
-module.exports = router;
+module.exports = router
