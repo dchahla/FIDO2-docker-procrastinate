@@ -109,7 +109,6 @@ router.post('/result', json(), async (req, res) => {
     console.log(
       `WARN [/fido2/assertion/result] No credential found with ID ${id}`
     )
-
     throw FailedAuthenticationError()
   }
   const activeCredential = credentialSnapshot.docs[0].data()
@@ -120,19 +119,20 @@ router.post('/result', json(), async (req, res) => {
     console.log(
       `WARN [/fido2/assertion/result] Presented credential (id = ${activeCredential.id}) is not associated with specified user (id = ${authentication.userId})`
     )
-
     throw FailedAuthenticationError()
   }
 
   // fetch associated user
-  const userSnapshot = await usersTable.doc(activeCredential.user_id).get()
-  if (!userSnapshot.exists) {
+  const userSnapshot = await usersTable
+    .where('id', '==', activeCredential.user_id)
+    .get()
+  if (userSnapshot.empty) {
     // NOTE: this shouldn't happen unless there's a data integrity issue
     throw new Error(
-      `Cannot find user (id = ${activeCredential.user_id}) associated with active credential (id =${activeCredential.id})`
+      `Cannot find user (id = ${activeCredential.user_id}) associated with active credential (id = ${activeCredential.id})`
     )
   }
-  const existingUser = userSnapshot.data()
+  const existingUser = userSnapshot.docs[0].data()
 
   // verify assertion
   let verification
@@ -153,7 +153,6 @@ router.post('/result', json(), async (req, res) => {
       `WARN [/fido2/assertion/result] Authentication error with user (id = ${existingUser.id}) and credential (id = ${activeCredential.id}):`,
       err
     )
-
     throw FailedAuthenticationError()
   }
   console.log(`DEBUG [/fido2/assertion/result] verification:`, verification)
