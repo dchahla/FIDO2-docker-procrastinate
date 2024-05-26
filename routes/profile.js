@@ -15,9 +15,11 @@ const { fetchMetadata } = require('../utils/metadata')
 router.get('/profile', requiresAuth(), async (req, res) => {
   const userSnapshot = await usersTable.doc(req.user.id).get()
   const profile = userSnapshot.data()
-
-  const hasPassword = profile.password_hash && profile.password_hash.length > 0
-  delete profile.password_hash
+  let hasPassword = 0
+  if (profile && profile.password_hash && profile.password_hash.length) {
+    hasPassword = 1
+    delete profile.password_hash
+  }
 
   const { updated = [] } = req.query
   const profile_updated = updated.includes('profile')
@@ -34,8 +36,8 @@ router.get('/profile', requiresAuth(), async (req, res) => {
     const c = doc.data()
     return {
       id: c.id,
-      icon: metadata[c.aaguid].icon,
-      description: metadata[c.aaguid].description,
+      icon: metadata[c.aaguid]?.icon,
+      description: metadata[c.aaguid]?.description,
       created: formatted(c.created),
       is_synced: c.is_backed_up,
       can_delete: credentialsSnapshot.size > 1 || hasPassword
