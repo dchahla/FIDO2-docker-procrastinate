@@ -1,0 +1,37 @@
+{
+  "tables": [
+    {
+      "name": "users",
+      "columns": [
+        { "name": "id" },
+        { "name": "created" },
+        { "name": "username" },
+        { "name": "display_name" },
+        { "name": "password_hash" }
+      ]
+    },
+    {
+      "name": "commitments",
+      "columns": [
+        { "name": "id" },
+        { "name": "description" },
+        { "name": "started" },
+        { "name": "user_id" }
+      ]
+    },
+    {
+      "name": "credentials",
+      "columns": [
+        { "name": "id" },
+        { "name": "created" },
+        { "name": "public_key" },
+        { "name": "counter" },
+        { "name": "aaguid" },
+        { "name": "device_type" },
+        { "name": "is_backed_up" },
+        { "name": "transports" },
+        { "name": "user_id" }
+      ]
+    }
+  ]
+}

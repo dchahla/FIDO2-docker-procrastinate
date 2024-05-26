@@ -1,0 +1,72 @@
+{{#> main_layout}}
+  {{#*inline "head_scripts"}}
+    {{> passkey_scripts }}
+  {{/inline}}
+
+  {{#*inline "body"}}
+    <div class="row">
+      <div class="col text-center">
+        <h3 class="mb-4">
+          Log in
+        </h3>
+      </div>
+    </div>
+
+    <div id="errorMessageSection" hidden>
+      <div class="row mb-4">
+        <div class="col-md-6 offset-md-3 text-danger text-center">
+          <span id="errorMessageSpan"></span>
+        </div>
+      </div>
+    </div>
+
+    <form method="post" id="sign_in_form">
+      {{> csrf_token_field}}
+
+      <div class="row mb-2">
+        <div class="col-md-6 offset-md-3">
+          <div class="form-floating">
+            <input type="email" class="form-control" name="username" id="username" autocomplete="username webauthn" value="{{username}}" placeholder="name@example.com" required autofocus>
+            <label for="username">Email</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-md-6 offset-md-3 text-center">
+          <button type="submit" class="btn btn-lg btn-primary" id="continueButton">Continue</button>
+        </div>
+      </div>
+    </form>
+  {{/inline}}
+
+  {{#*inline "body_scripts"}}
+    <script>
+      window.addEventListener("load", async () => {
+        // elements
+        const signInForm = document.querySelector("#sign_in_form");
+
+        // wire up UI events
+        signInForm.addEventListener("submit", async (event) => {
+          disable("#continueButton");
+        });
+
+        // support autofill sign-in
+        if ({{passkey_autofill_enabled}}) {
+          if (await isPasskeyAutofillSupported()) {
+            // perform autofill
+            authenticateUser()
+              .then((returnTo) => {
+                if (returnTo) {
+                  window.location = returnTo;
+                }
+              })
+              .catch((err) => {
+                return displayError(err);
+              });
+          }
+        }
+      });
+    </script>
+  {{/inline}}
+{{/main_layout}}
