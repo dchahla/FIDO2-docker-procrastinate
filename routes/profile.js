@@ -14,12 +14,20 @@ const { fetchMetadata } = require('../utils/metadata')
 
 router.get('/profile', requiresAuth(), async (req, res) => {
   const userSnapshot = await usersTable.doc(req.user.id).get()
-  const profile = userSnapshot.data()
+  let profile = req.user
+  if (userSnapshot.data()) profile = userSnapshot.data()
   let hasPassword = 0
-  if (profile && profile.password_hash && profile.password_hash.length) {
+  if (
+    userSnapshot &&
+    userSnapshot.password_hash &&
+    userSnapshot.password_hash.length
+  ) {
     hasPassword = 1
-    delete profile.password_hash
+    delete userSnapshot.password_hash
   }
+  // console.log(req.user)
+  // profile.username = req.user.username
+  // profile.display_name = req.user.display_name
 
   const { updated = [] } = req.query
   const profile_updated = updated.includes('profile')
@@ -74,9 +82,9 @@ router.post(
           throw BadRequestError('Missing: display_name')
         }
 
-        const userDoc = await usersTable.doc(req.user.id).get()
-        const profile = userDoc.data()
-
+        const userSnapshot = await usersTable.doc(req.user.id).get()
+        let profile = req.user
+        if (userSnapshot.data()) profile = userSnapshot.data()
         // update profile
         if (profile.display_name !== display_name) {
           profile.display_name = display_name
